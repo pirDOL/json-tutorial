@@ -2,6 +2,7 @@
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
 #endif
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +25,7 @@ static int test_pass = 0;
 
 #define EXPECT_EQ_INT(expect, actual) EXPECT_EQ_BASE((expect) == (actual), expect, actual, "%d")
 #define EXPECT_EQ_DOUBLE(expect, actual) EXPECT_EQ_BASE((expect) == (actual), expect, actual, "%.17g")
+/*#define EXPECT_EQ_DOUBLE(expect, actual) EXPECT_EQ_BASE(fabs((expect) == (actual)) < 1e-15, expect, actual, "%.17g")*/
 #define EXPECT_EQ_STRING(expect, actual, alength) \
     EXPECT_EQ_BASE(sizeof(expect) - 1 == alength && memcmp(expect, actual, alength) == 0, expect, actual, "%s")
 #define EXPECT_TRUE(actual) EXPECT_EQ_BASE((actual) != 0, "true", "false", "%s")
@@ -135,6 +137,44 @@ static void test_parse_array() {
     EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
     EXPECT_EQ_SIZE_T(0, lept_get_array_size(&v));
     lept_free(&v);
+
+    lept_init(&v);
+    EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ null , false , true , 123 , \"abc\" ]"));
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+    EXPECT_EQ_SIZE_T(5, lept_get_array_size(&v));
+
+    EXPECT_EQ_INT(LEPT_NULL, lept_get_type(lept_get_array_element(&v, 0)));
+    EXPECT_FALSE(lept_get_boolean(lept_get_array_element(&v, 1)));
+    EXPECT_TRUE(lept_get_boolean(lept_get_array_element(&v, 2)));
+    EXPECT_EQ_DOUBLE(123, lept_get_number(lept_get_array_element(&v, 3)));
+    EXPECT_EQ_STRING("abc", lept_get_string(lept_get_array_element(&v, 4)), lept_get_string_length(lept_get_array_element(&v, 4)));
+
+    lept_free(&v);
+
+    lept_init(&v);
+    EXPECT_EQ_INT(LEPT_PARSE_OK, lept_parse(&v, "[ [ ] , [ 0 ] , [ 0 , 1 ] , [ 0 , 1 , 2 ] ]"));
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(&v));
+    EXPECT_EQ_SIZE_T(4, lept_get_array_size(&v));
+
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(lept_get_array_element(&v, 0)));
+    EXPECT_EQ_SIZE_T(0, lept_get_array_size(lept_get_array_element(&v, 0)));
+
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(lept_get_array_element(&v, 1)));
+    EXPECT_EQ_SIZE_T(1, lept_get_array_size(lept_get_array_element(&v, 1)));
+    EXPECT_EQ_INT(0, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 1), 0)));
+
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(lept_get_array_element(&v, 2)));
+    EXPECT_EQ_SIZE_T(2, lept_get_array_size(lept_get_array_element(&v, 2)));
+    EXPECT_EQ_INT(0, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 2), 0)));
+    EXPECT_EQ_INT(1, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 2), 1)));
+
+    EXPECT_EQ_INT(LEPT_ARRAY, lept_get_type(lept_get_array_element(&v, 3)));
+    EXPECT_EQ_SIZE_T(3, lept_get_array_size(lept_get_array_element(&v, 3)));
+    EXPECT_EQ_INT(0, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 3), 0)));
+    EXPECT_EQ_INT(1, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 3), 1)));
+    EXPECT_EQ_INT(2, lept_get_number(lept_get_array_element(lept_get_array_element(&v, 3), 2)));
+    
+    lept_free(&v);   
 }
 
 #define TEST_ERROR(error, json)\
@@ -167,7 +207,7 @@ static void test_parse_invalid_value() {
     TEST_ERROR(LEPT_PARSE_INVALID_VALUE, "nan");
 
     /* invalid value in array */
-#if 0
+#if 1
     TEST_ERROR(LEPT_PARSE_INVALID_VALUE, "[1,]");
     TEST_ERROR(LEPT_PARSE_INVALID_VALUE, "[\"a\", nul]");
 #endif
@@ -229,7 +269,7 @@ static void test_parse_invalid_unicode_surrogate() {
 }
 
 static void test_parse_miss_comma_or_square_bracket() {
-#if 0
+#if 1
     TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1");
     TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1}");
     TEST_ERROR(LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET, "[1 2");

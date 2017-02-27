@@ -4,6 +4,7 @@
 #include <math.h>    /* HUGE_VAL */
 #include <stdlib.h>  /* NULL, malloc(), realloc(), free(), strtod() */
 #include <string.h>  /* memcpy() */
+#include <stdio.h>
 
 #ifndef LEPT_PARSE_STACK_INIT_SIZE
 #define LEPT_PARSE_STACK_INIT_SIZE 256
@@ -11,6 +12,7 @@
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
+#define ISUNESCAPED(ch)     !((ch) < '\x20' || (ch) == '\x22' || (ch) == '\x5c')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
 #define PUTC(c, ch)         do { *(char*)lept_context_push(c, sizeof(char)) = (ch); } while(0)
 
@@ -19,6 +21,22 @@ typedef struct {
     char* stack;
     size_t size, top;
 }lept_context;
+
+static int lept_is_valid_escape(char c) {
+    switch (c) {
+    case '\"':
+    case '\\':
+    case '/':
+    case '\b':
+    case '\f':
+    case '\n':
+    case '\r':
+    case '\t':
+        return 1;
+    default:
+        return 0;
+    }
+}
 
 static void* lept_context_push(lept_context* c, size_t size) {
     void* ret;
@@ -102,8 +120,67 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
             case '\0':
                 c->top = head;
                 return LEPT_PARSE_MISS_QUOTATION_MARK;
+            case '\\':
+                ch = *p++;
+                if (ch == '\0') {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                } else if (ch == 'u') {
+                    /* TODO */
+                } else if (ch == 'x') {
+                    char high = *p++;
+                    if (high == '\0') {
+                        c->top = head;
+                        return LEPT_PARSE_MISS_QUOTATION_MARK;
+                    }
+                    char low = *p++;
+                    if (low == '\0') {
+                        c->top = head;
+                        return LEPT_PARSE_MISS_QUOTATION_MARK;
+                    }
+                    char ascii = 0;
+                    if (ISDIGIT(high)) {
+                        ascii |= (high - '0') << 4;
+                    } else {
+                        high |= 0x20;
+                        if (high >= 'a' && high <= 'f') {
+                            ascii |= (high - 'f') << 4;
+                        } else {
+                            c->top = head;
+                            return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                        }
+                    }
+                    if (ISDIGIT(low)) {
+                        ascii |= ((low - '0') & 0x0f);
+                    } else {
+                        low |= 0x20;
+                        if (low >= 'a' && low <= 'f') {
+                            ascii |= ((low - 'f') & 0x0f);
+                        } else {
+                            c->top = head;
+                            return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                        }
+                    }
+                    if (lept_is_valid_escape(ascii) != 0) {
+                        PUTC(c, ch);
+                    } else {
+                        c->top = head;
+                        return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                    }                   
+                } else if (lept_is_valid_escape(ch) != 0) {
+                    PUTC(c, ch);
+                } else {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                } 
+                break;
             default:
-                PUTC(c, ch);
+                if (ISUNESCAPED(ch)) {
+                    PUTC(c, ch);
+                } else {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_CHAR;
+                }
         }
     }
 }
@@ -154,11 +231,21 @@ lept_type lept_get_type(const lept_value* v) {
 
 int lept_get_boolean(const lept_value* v) {
     /* \TODO */
-    return 0;
+    assert(v != NULL && (v->type == LEPT_FALSE || v->type == LEPT_TRUE));
+    return (v->u.n < 1e-7 && v->u.n > -1e-7) ? 0 : 1;
 }
 
 void lept_set_boolean(lept_value* v, int b) {
     /* \TODO */
+    if (b == 0) {
+        /* lept_set_string(v, "false"); */
+        v->u.n = 0;
+        v->type = LEPT_FALSE;
+    } else {
+        /* lept_set_string(v, "true"); */
+        v->u.n = 1;
+        v->type = LEPT_TRUE;
+    }
 }
 
 double lept_get_number(const lept_value* v) {
@@ -168,6 +255,9 @@ double lept_get_number(const lept_value* v) {
 
 void lept_set_number(lept_value* v, double n) {
     /* \TODO */
+    assert(v != NULL);
+    v->type = LEPT_NUMBER;
+    v->u.n = n;
 }
 
 const char* lept_get_string(const lept_value* v) {
